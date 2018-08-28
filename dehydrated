@@ -160,7 +160,7 @@ load_config() {
     echo "# !! WARNING !! No main config file found, using default config!" >&2
     echo "#" >&2
   elif [[ -f "${CONFIG}" ]]; then
-    echo "# INFO: Using main config file ${CONFIG}"
+    log "# INFO: Using main config file ${CONFIG}"
     BASEDIR="$(dirname "${CONFIG}")"
     # shellcheck disable=SC1090
     . "${CONFIG}"
@@ -278,6 +278,13 @@ load_config() {
     verify_config
   fi
   store_configvars
+}
+
+# print log messages respecting --quiet (-q) flag
+log() {
+  if [[ ! "${PARAM_QUIET:-}" = "yes" ]]; then
+    echo $@
+  fi
 }
 
 # Initialize system
@@ -1165,7 +1172,7 @@ command_sign_domains() {
   [[ -n "${HOOK}" ]] && "${HOOK}" "startup_hook"
 
   if [ ! -d "${CHAINCACHE}" ]; then
-    echo " + Creating chain cache directory ${CHAINCACHE}"
+    log " + Creating chain cache directory ${CHAINCACHE}"
     mkdir "${CHAINCACHE}"
   fi
 
@@ -1201,9 +1208,9 @@ command_sign_domains() {
     export alias
 
     if [[ -z "${morenames}" ]];then
-      echo "Processing ${domain}"
+      log "Processing ${domain}"
     else
-      echo "Processing ${domain} with alternative names: ${morenames}"
+      log "Processing ${domain} with alternative names: ${morenames}"
     fi
 
     if [ "${alias:0:2}" = "*." ]; then
@@ -1235,7 +1242,7 @@ command_sign_domains() {
     fi
 
     if [ -f "${certconfig}" ]; then
-      echo " + Using certificate specific config file!"
+      log " + Using certificate specific config file!"
       ORIGIFS="${IFS}"
       IFS=$'\n'
       for cfgline in $(
@@ -1253,7 +1260,7 @@ command_sign_domains() {
         config_value="$(echo "${cfgline:1}" | cut -d'=' -f2-)"
         case "${config_var}" in
           KEY_ALGO|OCSP_MUST_STAPLE|PRIVATE_KEY_RENEW|PRIVATE_KEY_ROLLOVER|KEYSIZE|CHALLENGETYPE|HOOK|WELLKNOWN|HOOK_CHAIN|OPENSSL_CNF|RENEW_DAYS)
-            echo "   + ${config_var} = ${config_value}"
+            log "   + ${config_var} = ${config_value}"
             declare -- "${config_var}=${config_value}"
             ;;
           _) ;;
@@ -1284,13 +1291,13 @@ command_sign_domains() {
 
     # Check domain names of existing certificate
     if [[ -e "${cert}" ]]; then
-      printf " + Checking domain name(s) of existing cert..."
+      log " + Checking domain name(s) of existing cert..."
 
       certnames="$("${OPENSSL}" x509 -in "${cert}" -text -noout | grep DNS: | _sed 's/DNS://g' | tr -d ' ' | tr ',' '\n' | sort -u | tr '\n' ' ' | _sed 's/ $//')"
       givennames="$(echo "${domain}" "${morenames}"| tr ' ' '\n' | sort -u | tr '\n' ' ' | _sed 's/ $//' | _sed 's/^ //')"
 
       if [[ "${certnames}" = "${givennames}" ]]; then
-        echo " unchanged."
+        log " unchanged."
       else
         echo " changed!"
         echo " + Domain name(s) are not matching!"
@@ -1303,17 +1310,17 @@ command_sign_domains() {
 
     # Check expire date of existing certificate
     if [[ -e "${cert}" ]]; then
-      echo " + Checking expire date of existing cert..."
+      log " + Checking expire date of existing cert..."
       valid="$("${OPENSSL}" x509 -enddate -noout -in "${cert}" | cut -d= -f2- )"
 
-      printf " + Valid till %s " "${valid}"
+      log `printf " + Valid till %s " "${valid}"`
       if "${OPENSSL}" x509 -checkend $((RENEW_DAYS * 86400)) -noout -in "${cert}"; then
-        printf "(Longer than %d days). " "${RENEW_DAYS}"
+        log `printf "(Longer than %d days). " "${RENEW_DAYS}"`
         if [[ "${force_renew}" = "yes" ]]; then
           echo "Ignoring because renew was forced!"
         else
           # Certificate-Names unchanged and cert is still valid
-          echo "Skipping renew!"
+          log "Skipping renew!"
           [[ -n "${HOOK}" ]] && "${HOOK}" "unchanged_cert" "${domain}" "${certdir}/privkey.pem" "${certdir}/cert.pem" "${certdir}/fullchain.pem" "${certdir}/chain.pem"
           skip="yes"
         fi
@@ -1369,7 +1376,7 @@ command_sign_domains() {
 
   [[ -n "${HOOK}" ]] && "${HOOK}" "exit_hook"
   if [[ "${AUTO_CLEANUP}" == "yes" ]]; then
-    echo "+ Running automatic cleanup"
+    log "+ Running automatic cleanup"
     command_cleanup noinit
   fi
   exit 0
@@ -1664,6 +1671,12 @@ main() {
       # PARAM_Description: Keep going after encountering an error while creating/renewing multiple certificates in cron mode
       --keep-going|-g)
         PARAM_KEEP_GOING="yes"
+        ;;
+
+      # PARAM_Usage: --quiet (-q)
+      # PARAM_Description: Silences all "non action" output while creating/renewing multiple certificates in cron mode
+      --quiet|-q)
+        PARAM_QUIET="yes"
         ;;
 
       # PARAM_Usage: --force (-x)
